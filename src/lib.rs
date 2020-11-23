@@ -188,3 +188,12 @@ impl Display for PartialMsgWriteError {
     }
 }
 impl Error for PartialMsgWriteError {}
+
+#[cfg(test)]
+pub fn rand_string(n: usize) -> String {
+    use rand::Rng;
+    rand::thread_rng()
+        .sample_iter(&rand::distributions::Alphanumeric)
+        .take(n)
+        .collect::<String>()
+}

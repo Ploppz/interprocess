@@ -20,6 +20,7 @@ futures = {version = "0.3", optional = true}
 
 [dev_dependencies]
 tokio = {version = "0.3", features = ["rt", "macros", "rt-multi-thread"]}
+rand = "0.7.3"
 
 [target.'cfg(windows)'.dependencies]
 winapi = {version = "0.3", features = ["std", "winbase", "winerror", "processthreadsapi", "fileapi", "handleapi", "namedpipeapi"]}

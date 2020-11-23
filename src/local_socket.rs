@@ -427,6 +427,8 @@ impl ToLocalSocketName<'static> for CString {
 #[cfg(test)]
 mod test {
     use crate::local_socket::{LocalSocketListener, LocalSocketStream};
+    use crate::rand_string;
+
     #[test]
     fn basic() {
         use std::{
@@ -434,11 +436,14 @@ mod test {
             sync::{Arc, Barrier},
         };
 
+        let socket_name = format!("/tmp/{}.sock", rand_string(10));
+
         // We're using a barrier here to avoid the client attempting to connect
         // before the server creates the socket
         let barrier = Arc::new(Barrier::new(2));
         let server_barrier = Arc::clone(&barrier);
-        
+ 
+        let socket_name2 = socket_name.clone();       
         std::thread::spawn(move || {
             fn handle_error(
                 connection: io::Result<LocalSocketStream>,
@@ -451,7 +456,7 @@ mod test {
                 }
             }
 
-            let listener = LocalSocketListener::bind("/tmp/example.sock").unwrap();
+            let listener = LocalSocketListener::bind(socket_name2).unwrap();
             server_barrier.wait();
             for mut conn in listener.incoming().filter_map(handle_error) {
                 println!("Incoming connection!");
@@ -466,8 +471,61 @@ mod test {
 
         barrier.wait();
         let h2 = std::thread::spawn(move || {
-            let mut conn = LocalSocketStream::connect("/tmp/example.sock").unwrap();
+            let mut conn = LocalSocketStream::connect(socket_name).unwrap();
             conn.write_all(b"Hello from client!\n").unwrap();
+            let mut conn = BufReader::new(conn);
+            let mut buffer = String::new();
+            conn.read_line(&mut buffer).unwrap();
+            println!("Server answered: {}", buffer);
+        });
+        h2.join().unwrap();
+    }
+     #[test]
+    fn high_payload() {
+        use std::{
+            io::{self, prelude::*, BufReader},
+            sync::{Arc, Barrier},
+        };
+
+        let socket_name = format!("/tmp/{}.sock", rand_string(10));
+
+        // We're using a barrier here to avoid the client attempting to connect
+        // before the server creates the socket
+        let barrier = Arc::new(Barrier::new(2));
+        let server_barrier = Arc::clone(&barrier);
+
+        let socket_name2 = socket_name.clone();
+        std::thread::spawn(move || {
+            fn handle_error(
+                connection: io::Result<LocalSocketStream>,
+            ) -> Option<LocalSocketStream> {
+                match connection {
+                    Ok(val) => Some(val),
+                    Err(error) => {
+                        panic!("Incoming connection failed: {}", error);
+                    }
+                }
+            }
+
+            let listener = LocalSocketListener::bind(socket_name2).unwrap();
+            server_barrier.wait();
+            for mut conn in listener.incoming().filter_map(handle_error) {
+                println!("Incoming connection!");
+                conn.write_all(b"Hello from server!\n").unwrap();
+                // Add buffering to the connection to read a line.
+                let mut conn = BufReader::new(conn);
+                let mut buffer: Vec<u8> = vec![0; 10_000_000];
+                conn.read_exact(&mut buffer).unwrap();
+                println!("Client answered: (len={})", buffer.len());
+            }
+        });
+
+        barrier.wait();
+        let h2 = std::thread::spawn(move || {
+            let mut conn = LocalSocketStream::connect(socket_name).unwrap();
+            const LEN: usize = 10_000_000;
+            let data = (0..LEN).map(|i| (i%256) as u8).collect::<Vec<u8>>();
+            conn.write_all(&data).unwrap();
             let mut conn = BufReader::new(conn);
             let mut buffer = String::new();
             conn.read_line(&mut buffer).unwrap();
